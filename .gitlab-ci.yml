@@ -1,0 +1,104 @@
+image: ghcr.io/kjaleshire/docker-builder:2023072673
+
+stages:
+  - build
+
+.before_script: &waitfordocker
+  - echo -e "\e[0Ksection_start:`date +%s`:docker_wait_readiness[collapsed=true]\r\e[0KWaiting for docker daemon to be ready"
+  - test ${CI_DEBUG_TRUE+true} && set -x
+  - type docker >/dev/null 2>&1 || exit 0
+  - test ${DOCKER_READINESS_TIMEOUT:=30} -eq 0 && exit 0
+  - slept=0
+  - until test $slept -eq $DOCKER_READINESS_TIMEOUT || docker info >/dev/null 2>&1; do
+  - sleep 1
+  - slept=$((slept + 1))
+  - done
+  - echo -e "\e[0Ksection_end:`date +%s`:docker_wait_readiness\r\e[0K"
+
+build-acore-wotlk-all:
+  before_script: *waitfordocker
+
+  # cache:
+  #   - key:
+  #       files:
+  #         - apps/bash_shared/deno.sh
+  #     paths:
+  #       - deps/deno
+
+  script:
+    - export DATESTAMP=$(date '+%Y%m%d')
+    - export DOCKER_TAG=${DATESTAMP}${CI_PIPELINE_ID}
+
+    # build db-import
+    - echo -e "\e[0Ksection_start:`date +%s`:acore_build_db_import[collapsed=true]\r\e[0KBuilding Azerothcore db-import image tagged ${DOCKER_TAG}"
+    - docker compose build ac-db-import
+    - echo -e "\e[0Ksection_end:`date +%s`:acore_build_db_import\r\e[0K"
+    # build authserver
+    - echo -e "\e[0Ksection_start:`date +%s`:acore_build_authserver[collapsed=true]\r\e[0KBuilding Azerothcore authserver image tagged ${DOCKER_TAG}"
+    - docker compose build ac-authserver
+    - echo -e "\e[0Ksection_end:`date +%s`:acore_build_authserver\r\e[0K"
+    # build worldserver
+    - echo -e "\e[0Ksection_start:`date +%s`:acore_build_worldserver[collapsed=true]\r\e[0KBuilding Azerothcore worldserver image tagged ${DOCKER_TAG}"
+    - docker compose build ac-worldserver
+    - echo -e "\e[0Ksection_end:`date +%s`:acore_build_worldserver\r\e[0K"
+
+    - echo $GITHUB_TOKEN | docker login ghcr.io -u kjaleshire --password-stdin
+    - docker tag acore/ac-wotlk-db-import:master ghcr.io/kjaleshire/ac-wotlk-db-import:${DOCKER_TAG}
+    - docker tag acore/ac-wotlk-db-import:master ghcr.io/kjaleshire/ac-wotlk-db-import:latest
+    - docker tag acore/ac-wotlk-authserver:master ghcr.io/kjaleshire/ac-wotlk-authserver:${DOCKER_TAG}
+    - docker tag acore/ac-wotlk-authserver:master ghcr.io/kjaleshire/ac-wotlk-authserver:latest
+    - docker tag acore/ac-wotlk-worldserver:master ghcr.io/kjaleshire/ac-wotlk-worldserver:${DOCKER_TAG}
+    - docker tag acore/ac-wotlk-worldserver:master ghcr.io/kjaleshire/ac-wotlk-worldserver:latest
+
+    # push db-import
+    - echo -e "\e[0Ksection_start:`date +%s`:docker_push_db_import_tag[collapsed=true]\r\e[0KPushing ac-wotlk-db-import:${DOCKER_TAG}"
+    - docker push ghcr.io/kjaleshire/ac-wotlk-db-import:${DOCKER_TAG}
+    - echo -e "\e[0Ksection_end:`date +%s`:docker_push_db_import_tag\r\e[0K"
+    - echo -e "\e[0Ksection_start:`date +%s`:docker_push_db_import_latest[collapsed=true]\r\e[0KPushing ac-wotlk-db-import:latest"
+    - docker push ghcr.io/kjaleshire/ac-wotlk-db-import:latest
+    - echo -e "\e[0Ksection_end:`date +%s`:docker_push_db_import_latest\r\e[0K"
+    # push authserver
+    - echo -e "\e[0Ksection_start:`date +%s`:docker_push_authserver_tag[collapsed=true]\r\e[0KPushing ac-wotlk-authserver:${DOCKER_TAG}"
+    - docker push ghcr.io/kjaleshire/ac-wotlk-authserver:${DOCKER_TAG}
+    - echo -e "\e[0Ksection_end:`date +%s`:docker_push_authserver_tag\r\e[0K"
+    - echo -e "\e[0Ksection_start:`date +%s`:docker_push_authserver_latest[collapsed=true]\r\e[0KPushing ac-wotlk-authserver:latest"
+    - docker push ghcr.io/kjaleshire/ac-wotlk-authserver:latest
+    - echo -e "\e[0Ksection_end:`date +%s`:docker_push_authserver_latest\r\e[0K"
+    # push worldserver
+    - echo -e "\e[0Ksection_start:`date +%s`:docker_push_worldserver_tag[collapsed=true]\r\e[0KPushing ac-wotlk-worldserver:${DOCKER_TAG}"
+    - docker push ghcr.io/kjaleshire/ac-wotlk-worldserver:${DOCKER_TAG}
+    - echo -e "\e[0Ksection_end:`date +%s`:docker_push_worldserver_tag\r\e[0K"
+    - echo -e "\e[0Ksection_start:`date +%s`:docker_push_worldserver_latest[collapsed=true]\r\e[0KPushing ac-wotlk-worldserver:latest"
+    - docker push ghcr.io/kjaleshire/ac-wotlk-worldserver:latest
+    - echo -e "\e[0Ksection_end:`date +%s`:docker_push_worldserver_latest\r\e[0K"
+
+  services:
+    - docker:28.1.1-dind
+
+  stage: build
+  when: manual
+
+mirror-upstream-sync:
+  before_script:
+    - apt-get update -y && apt-get install git openssh-client -y
+    - eval $(ssh-agent -s)
+    - echo "$SSH_PRIVATE_KEY" | tr -d '\r' | ssh-add -
+    - ssh-add -l
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - ssh-keyscan -p $CI_SERVER_SHELL_SSH_PORT $CI_SERVER_SHELL_SSH_HOST >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+    - git config --global user.name "${GITLAB_USER_LOGIN}"
+    - git config --global user.email "${GITLAB_USER_EMAIL}"
+    - ssh -p $CI_SERVER_SHELL_SSH_PORT "git@$CI_SERVER_SHELL_SSH_HOST"
+
+  only:
+    - schedules
+  script:
+    - git remote add upstream "https://github.com/trickerer/AzerothCore-wotlk-with-NPCBots.git"
+    - git remote add sshorigin "ssh://git@gitlab.antioch.kja.us/kja/AzerothCore-wotlk-with-NPCBots.git"
+    - git fetch --all
+    - git checkout --track origin/npcbots_3.3.5
+    - git reset --hard upstream/npcbots_3.3.5
+    - git push -f sshorigin npcbots_3.3.5
+  stage: build
