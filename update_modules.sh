@@ -2,6 +2,12 @@
 
 set -e
 
+# First, rebase the deployment branch like so. Upstream is trickerer repo, origin is kjaleshire repo, antioch is local gitlab
+# git checkout npcbots_3.3.5
+# git pull upstream npcbots_3.3.5
+# git checkout outland-deployment
+# git rebase npcbots_3.3.5
+
 # mod-ah-bot
 rm -rf modules/mod-ah-bot
 git clone git@github.com:azerothcore/mod-ah-bot.git modules/mod-ah-bot

@@ -73,7 +73,7 @@ build-acore-wotlk-all:
     - echo -e "\e[0Ksection_end:`date +%s`:docker_push_worldserver_latest\r\e[0K"
 
   services:
-    - docker:28.1.1-dind
+    - docker:28.3.3-dind
 
   stage: build
   when: manual
